@@ -1,5 +1,14 @@
 package imobiliare;
 
+import imobiliare.anunt.Anunt;
+import imobiliare.anunt.AnuntApartament;
+import imobiliare.anunt.AnuntCasa;
+import imobiliare.anunt.AnuntTeren;
+import imobiliare.enums.PageType;
+import imobiliare.result.Result;
+import imobiliare.result.ErrorType;
+import imobiliare.webDriver.WaitDriverImobiliare;
+import imobiliare.webDriver.WebDriverImobiliare;
 import lombok.Data;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -7,16 +16,13 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedCondition;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 
+import static imobiliare.result.Result.*;
+
 import java.util.ArrayList;
 import java.util.List;
 
 @Data
 public class Page {
-
-    private double CONSIDER_ONLY_APARTMENTS_WITH_PRICE_LARGER_THEN = 20000;
-    private double CONSIDER_ONLY_APARTMENTS_WITH_PRICE_SMALLER_THEN = 190000;
-    private double CONSIDER_ONLY_APARTMENTS_WITH_MP_LARGER_THEN = 20;
-    private double CONSIDER_ONLY_APARTMENTS_WITH_MP_SMALLER_THEN = 150;
 
     public static final By ELEMENT_ACCEPT_ALL_COOKIES = By.xpath("//div[@aria-hidden='false']/div/div/div/div[2]/div[2]/div[2]/a");
     public static final By ELEMENT_ANUNT = By.xpath("//div[starts-with(@id, 'anunt-')]");
@@ -24,20 +30,26 @@ public class Page {
     public static final By ELEMENT_ACTIVE_PAGE_NUMBER = By.xpath("//a[@class ='active']");
 
     private WebDriver webDriver;
-    private int pageNumber;
+    private Integer pageNumber;
+    private PageType pageType;
 
-    public Page(String linkToPage) {
+    public Page(PageType pageType) {
+        this.pageType = pageType;
         this.webDriver = WebDriverImobiliare.getWebDriver();
-        webDriver.get(linkToPage);
+        webDriver.get(pageType.getLinkToPage());
         waitForPageCookiesAndAcceptIt();
         this.pageNumber = waitForActivePageNumberAndReturnThePageNumber();
+        if (pageNumber == null)
+            throw new RuntimeException("CANNOT GET PAST THE FIRST PAGE");
+        System.out.println("Page number is: " + pageNumber);
     }
 
     /**
      * This is one of the last element on the page, so when the page is active, we can safely say the page is loaded.
      */
-    private int waitForActivePageNumberAndReturnThePageNumber() {
-        int secondsToWait = 15;
+    private Integer waitForActivePageNumberAndReturnThePageNumber() {
+        int secondsToWait = 25;
+        final WebElement pageNumberElement;
         try {
             //asteptam pana cand elementul apare pe pagina si are o valoare in el
             WaitDriverImobiliare.
@@ -46,15 +58,19 @@ public class Page {
                         final String text = webDriver.findElement(ELEMENT_ACTIVE_PAGE_NUMBER).getText();
                         return text != null && !text.isEmpty();
                     });
-
-            final WebElement pageNumberElement = webDriver.findElement(ELEMENT_ACTIVE_PAGE_NUMBER);
-            final String activePage = pageNumberElement.getText();
-            return Integer.valueOf(activePage);
+            pageNumberElement = webDriver.findElement(ELEMENT_ACTIVE_PAGE_NUMBER);
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("The active page is not a number " +
-                    "or is null " +
-                    "or no active page number was found using xpath: " + ELEMENT_ACTIVE_PAGE_NUMBER);
+            Result.add(ErrorType.WAITING_TIMEOUT, ELEMENT_ACTIVE_PAGE_NUMBER.toString(), null, e.getMessage(), e, PageType.GENERAL);
+            return null;
+        }
+
+        final String activePage = pageNumberElement.getText();
+        try {
+            final Integer integer = Integer.valueOf(activePage);
+            return integer;
+        } catch (Exception e) {
+            Result.add(ErrorType.CASTING_EXCEPTION, ELEMENT_ACTIVE_PAGE_NUMBER.toString(), null, e.getMessage(), e, PageType.GENERAL);
+            return null;
         }
     }
 
@@ -66,7 +82,7 @@ public class Page {
                     until(ExpectedConditions.presenceOfElementLocated(ELEMENT_ACCEPT_ALL_COOKIES));
             webDriver.findElement(ELEMENT_ACCEPT_ALL_COOKIES).click();
         } catch (Exception e) {
-            System.out.println("The Accept Cookies element did not appear on the screen after waiting: " + sectondsToWait);
+            Result.add(ErrorType.WAITING_TIMEOUT, ELEMENT_ACCEPT_ALL_COOKIES.toString(), null, e.getMessage(), e, PageType.GENERAL);
         }
     }
 
@@ -74,45 +90,25 @@ public class Page {
         List<Anunt> anuntLista = new ArrayList<>();
 
         for (WebElement webElement : webDriver.findElements(ELEMENT_ANUNT)) {
-            Anunt anunt = new Anunt(webElement);
-            if (validateAnunt(anunt))
+            Anunt anunt;
+            switch (pageType) {
+                case APARTAMENT:
+                    anunt = new AnuntApartament(webElement, pageType);
+                    break;
+                case TEREN:
+                    anunt = new AnuntTeren(webElement, pageType);
+                    break;
+                case CASE:
+                    anunt = new AnuntCasa(webElement, pageType);
+                    break;
+                default:
+                    anunt = null;
+            }
+            if (!anunt.validateAnunt())
                 continue;
             anuntLista.add(anunt);
         }
         return anuntLista;
-    }
-
-    /**
-     * Validarile le fac si pentru a ma asigura ca datele ce le am sunt valide.
-     * Spre exemplu un metruPatrat cu valoarea de 123000 nu e un metru patrat, nu e data valide.
-     * <p>
-     * Totodata fac aceste validari pentru a nu mi se strica calculele.
-     * Spre exemplu un penthouse cu pretul de 1milion de dolari imi strica calculele de medie, astfel mai bine il scot.
-     */
-    private boolean validateAnunt(Anunt anunt) {
-        final Double pret = anunt.getPret();
-        if (pret == null
-                || pret < CONSIDER_ONLY_APARTMENTS_WITH_PRICE_LARGER_THEN
-                || pret > CONSIDER_ONLY_APARTMENTS_WITH_PRICE_SMALLER_THEN) {
-
-            System.out.println("Anuntul a fost eliminat din calcul deoarece am un pret non-valid: " + anunt.getPret());
-            return false;
-        }
-
-        final Double metriPatrati = anunt.getMetriPatrati();
-        if (metriPatrati == null
-                || metriPatrati < CONSIDER_ONLY_APARTMENTS_WITH_MP_LARGER_THEN
-                || metriPatrati > CONSIDER_ONLY_APARTMENTS_WITH_MP_SMALLER_THEN) {
-            System.out.println("Anuntul a fost eliminat din calcul deoarece am un metruPatrat non-valid: " + anunt.getMetriPatrati());
-            return false;
-        }
-
-        final String currency = anunt.getPriceCurrency();
-        if (currency == null || !currency.equals("EUR")) {
-            System.out.println("Anuntul a fost eliminat din calcul deoarece am un Currency non-valid: " + anunt.getPriceCurrency());
-            return false;
-        }
-        return true;
     }
 
     /**
@@ -124,18 +120,18 @@ public class Page {
             webDriver.findElement(ELEMENT_PARENT_PAGINARE).
                     findElement(By.className("icon-portal-arrow-right")).click();
         } catch (Exception e) {
-            System.out.println("The arrow button cannot be fond, is it because " +
-                    "there were no more pages? Or xpath is wrong?");
+            Result.add(ErrorType.ELEMENT_NOT_FOUND, "icon-portal-arrow-right", null, e.getMessage(), e, PageType.GENERAL);
             return false;
         }
 
         //wait the next page to pe active
-        final int activePage = waitForActivePageNumberAndReturnThePageNumber();
-        if (activePage == this.pageNumber) {
+        final Integer activePage = waitForActivePageNumberAndReturnThePageNumber();
+        if (activePage == null || activePage == this.pageNumber) {
             return false;
         } else {
             System.out.println("New Page number is: " + activePage);
             this.pageNumber = activePage;
+            NUMARUL_PAGINII++;
             return true;
         }
     }

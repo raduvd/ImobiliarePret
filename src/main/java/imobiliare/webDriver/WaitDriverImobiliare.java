@@ -1,4 +1,4 @@
-package imobiliare;
+package imobiliare.webDriver;
 
 import org.openqa.selenium.support.ui.WebDriverWait;
 

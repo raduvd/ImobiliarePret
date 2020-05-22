@@ -16,7 +16,7 @@ import java.util.Set;
 public class MainTest {
 
     //Aici ar trebui sa mearga pana la maxim tot timpul, deci pune cam 500
-    public static final int NUMBER_OF_PAGES = 1;
+    public static final int NUMBER_OF_PAGES = 500;
 
     @Test
     public void testAppartamente() {

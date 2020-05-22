@@ -25,6 +25,8 @@ public class WriteToExcel {
         String currentTime = LocalDateTime.now().format(formatter);
 
         newEntry.push(currentTime);
+        newEntry.add(pageType.name());
+
         try {
             FileInputStream inputStream = new FileInputStream(new File(PATH_TO_OUTPUT_FILE));
             Workbook workbook = WorkbookFactory.create(inputStream);
